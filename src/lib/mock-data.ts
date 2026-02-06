@@ -1,0 +1,390 @@
+import type {
+  EcProduct,
+  EcComment,
+  MonitorReport,
+  DashboardStats,
+  SentimentDistribution,
+  TrendDataPoint,
+  CategoryDistribution,
+  KeyIssue,
+} from "@/types";
+
+// ========== 商品数据 ==========
+export const mockProducts: EcProduct[] = [
+  {
+    id: "prod-001",
+    product_url: "https://item.jd.com/10089231456.html",
+    product_name: "戴林牌智能无线吸尘器 V12 Pro",
+    platform: "京东",
+    created_time: "2024-12-01T00:00:00Z",
+    updated_time: "2024-12-31T23:59:59Z",
+  },
+  {
+    id: "prod-002",
+    product_url: "https://detail.tmall.com/item.htm?id=7823456190",
+    product_name: "地猫精灵智能机器人 X1",
+    platform: "天猫",
+    created_time: "2024-12-01T00:00:00Z",
+    updated_time: "2024-12-31T23:59:59Z",
+  },
+];
+
+// ========== 评论数据（基于 ec_comments.json） ==========
+
+interface RawComment {
+  comment_id: string;
+  user_name: string;
+  rating: number;
+  comment_text: string;
+  comment_time: string;
+  helpful_count: number;
+}
+
+// 负面关键词用于模拟情感分析
+const negativeKeywords = [
+  "差", "坏", "慢", "贵", "垃圾", "失望", "后悔", "退货", "退款",
+  "不值", "虚标", "噱头", "缺陷", "问题", "投诉", "差评", "坑",
+  "不行", "不好", "难用", "太差", "不满", "暴怒", "生气", "恼火",
+  "崩溃", "无奈", "心累", "吐血", "被坑", "虚假", "刁难", "搪塞",
+  "不负责", "形同虚设",
+];
+
+function analyzeSentiment(text: string, rating: number): { score: number; negative: boolean } {
+  const hasNegative = negativeKeywords.some((kw) => text.includes(kw));
+  if (rating <= 2 || hasNegative) {
+    const score = rating <= 1 ? -0.8 - Math.random() * 0.2 : -0.4 - Math.random() * 0.3;
+    return { score: parseFloat(score.toFixed(2)), negative: true };
+  }
+  if (rating === 3) {
+    return { score: parseFloat((Math.random() * 0.4 - 0.1).toFixed(2)), negative: false };
+  }
+  const score = 0.5 + Math.random() * 0.5;
+  return { score: parseFloat(score.toFixed(2)), negative: false };
+}
+
+// 问题分类
+const issueCategories: Record<string, string[]> = {
+  质量问题: ["坏", "质量", "缺陷", "衰减", "异响", "脱落", "不转", "划痕", "松动", "死机", "故障", "次品", "品控"],
+  服务问题: ["客服", "售后", "退货", "退款", "态度", "不理", "排队", "不管", "搪塞", "刁难", "投诉"],
+  物流问题: ["物流", "快递", "发货", "包装", "压扁", "淋湿", "发错", "驿站"],
+  价格问题: ["贵", "不值", "降价", "付费", "要钱", "性价比低", "虚假宣传"],
+  功能问题: ["噪音", "噱头", "虚标", "卡住", "延迟", "不稳定", "掉线", "卡顿", "识别错"],
+};
+
+function categorizeIssue(text: string): string | null {
+  for (const [cat, keywords] of Object.entries(issueCategories)) {
+    if (keywords.some((kw) => text.includes(kw))) return cat;
+  }
+  return null;
+}
+
+function buildComments(
+  rawComments: RawComment[],
+  productId: string
+): EcComment[] {
+  return rawComments.map((c, idx) => {
+    const { score, negative } = analyzeSentiment(c.comment_text, c.rating);
+    return {
+      id: parseInt(c.comment_id),
+      ec_product_id: productId,
+      comment_id: c.comment_id,
+      comment_text: c.comment_text,
+      comment_user: c.user_name,
+      rate: c.rating,
+      comment_time: c.comment_time,
+      helpful_count: c.helpful_count,
+      sentiment_score: score,
+      negative_flag: negative,
+      created_time: c.comment_time,
+      updated_time: c.comment_time,
+    };
+  });
+}
+
+// 产品1评论原始数据
+const product1RawComments: RawComment[] = [
+  { comment_id: "10001", user_name: "阳光下的猫咪", rating: 5, comment_text: "吸力很强，家里的猫毛全部搞定，非常满意！", comment_time: "2024-12-01 08:15:00", helpful_count: 32 },
+  { comment_id: "10002", user_name: "居家小能手", rating: 5, comment_text: "用了一周了，续航很不错，充满电能用40分钟左右，性价比很高。", comment_time: "2024-12-01 10:22:00", helpful_count: 28 },
+  { comment_id: "10003", user_name: "爱干净的鱼", rating: 4, comment_text: "整体不错，吸力够用，就是噪音稍微大了一点，但可以接受。", comment_time: "2024-12-01 15:30:00", helpful_count: 15 },
+  { comment_id: "10004", user_name: "数码控老张", rating: 5, comment_text: "做工精致，手感很好，轻便不累手，老婆也能轻松使用。", comment_time: "2024-12-02 09:10:00", helpful_count: 20 },
+  { comment_id: "10005", user_name: "小王同学", rating: 1, comment_text: "质量太差了，用了三天电机就不转了，联系售后说要寄回检测，太麻烦了。", comment_time: "2024-12-02 11:45:00", helpful_count: 45 },
+  { comment_id: "10006", user_name: "快乐购物狂", rating: 5, comment_text: "双十二买的，价格实惠，颜值在线，吸地毯效果特别好。", comment_time: "2024-12-02 14:20:00", helpful_count: 18 },
+  { comment_id: "10007", user_name: "洁癖少女", rating: 4, comment_text: "吸力分三档，日常用中档就够了，强力档吸床垫特别干净。", comment_time: "2024-12-03 07:50:00", helpful_count: 22 },
+  { comment_id: "10008", user_name: "北漂小李", rating: 5, comment_text: "租房必备神器，小巧方便不占地方，清洁效果一级棒。", comment_time: "2024-12-03 12:30:00", helpful_count: 16 },
+  { comment_id: "10009", user_name: "精打细算王阿姨", rating: 2, comment_text: "价格偏贵，和同价位的其他品牌比，吸力并没有明显优势，感觉不值。", comment_time: "2024-12-03 16:00:00", helpful_count: 38 },
+  { comment_id: "10010", user_name: "家有萌宠", rating: 5, comment_text: "专门买来吸狗毛的，效果超预期，沙发缝隙里的毛都能吸出来。", comment_time: "2024-12-04 08:45:00", helpful_count: 25 },
+  { comment_id: "10011", user_name: "懒人张大锤", rating: 4, comment_text: "不错不错，配件齐全，扁嘴吸头清理键盘特别方便。", comment_time: "2024-12-04 10:30:00", helpful_count: 12 },
+  { comment_id: "10012", user_name: "追求完美的处女座", rating: 1, comment_text: "收到货发现外壳有明显划痕，而且充电器接触不良，要插好几次才能充上电，退货流程还特别慢。", comment_time: "2024-12-04 14:15:00", helpful_count: 52 },
+  { comment_id: "10013", user_name: "宝妈小芳", rating: 5, comment_text: "家里有小宝宝，地上总有饼干碎屑，这个吸尘器随手一吸就干净了，太方便了。", comment_time: "2024-12-05 09:00:00", helpful_count: 19 },
+  { comment_id: "10014", user_name: "科技达人", rating: 5, comment_text: "马达转速很高，尘杯容量也够大，一次清理全屋没问题。", comment_time: "2024-12-05 11:20:00", helpful_count: 14 },
+  { comment_id: "10015", user_name: "老顾客了", rating: 4, comment_text: "之前买过戴林的上一代，这代续航确实提升了不少，好评。", comment_time: "2024-12-05 15:40:00", helpful_count: 10 },
+  { comment_id: "10016", user_name: "暴躁的消费者", rating: 1, comment_text: "物流太慢了！说好的次日达，结果等了五天才到，而且包装箱都压扁了，里面配件散落一地。", comment_time: "2024-12-06 08:30:00", helpful_count: 41 },
+  { comment_id: "10017", user_name: "温柔的风", rating: 5, comment_text: "颜色很好看，白色款百搭，挂在墙上也很美观，不像吸尘器倒像装饰品。", comment_time: "2024-12-06 10:50:00", helpful_count: 8 },
+  { comment_id: "10018", user_name: "实用主义者", rating: 4, comment_text: "功能够用，没有花里胡哨的东西，就是实实在在好用。", comment_time: "2024-12-06 13:25:00", helpful_count: 11 },
+  { comment_id: "10019", user_name: "二次购买的赵姐", rating: 5, comment_text: "给父母家也买了一台，老人家用着也很顺手，操作简单一键启动。", comment_time: "2024-12-07 07:30:00", helpful_count: 17 },
+  { comment_id: "10020", user_name: "失望的买家", rating: 2, comment_text: "客服态度很差，问个问题半天不回，回了也是复制粘贴的模板，完全没有解决我的问题。", comment_time: "2024-12-07 11:00:00", helpful_count: 36 },
+  { comment_id: "10021", user_name: "学生党小刘", rating: 5, comment_text: "宿舍清洁好帮手，室友都说好用，准备团购了哈哈。", comment_time: "2024-12-07 14:45:00", helpful_count: 21 },
+  { comment_id: "10022", user_name: "挑剔的陈先生", rating: 3, comment_text: "一般般吧，吸力还行但滤网不太好清洗，每次都要拆半天。", comment_time: "2024-12-08 08:20:00", helpful_count: 13 },
+  { comment_id: "10023", user_name: "生活美学家", rating: 5, comment_text: "包装很精致，送人也拿得出手，机器本身也很好用，五星好评。", comment_time: "2024-12-08 10:35:00", helpful_count: 9 },
+  { comment_id: "10024", user_name: "维修工老周", rating: 2, comment_text: "电池不耐用，标称40分钟续航，实际强力模式下15分钟就没电了，虚标严重。", comment_time: "2024-12-08 14:50:00", helpful_count: 48 },
+  { comment_id: "10025", user_name: "家庭主妇Linda", rating: 5, comment_text: "终于不用拖着长长的电线吸地了，无线的太方便了，哪里脏吸哪里。", comment_time: "2024-12-09 09:15:00", helpful_count: 16 },
+  { comment_id: "10026", user_name: "极简生活", rating: 4, comment_text: "设计简洁，功能实用，充电底座也很稳，值得推荐。", comment_time: "2024-12-09 11:40:00", helpful_count: 7 },
+  { comment_id: "10027", user_name: "不开心的顾客", rating: 1, comment_text: "用了不到一个月，滚刷就缠满了头发拆不下来，而且刷头转动时有异响，售后说不在保修范围内，这不是坑人吗？", comment_time: "2024-12-09 16:20:00", helpful_count: 55 },
+  { comment_id: "10028", user_name: "好评如潮", rating: 5, comment_text: "看了很多测评才下单的，果然没让我失望，吸力和续航都是顶级水平。", comment_time: "2024-12-10 07:55:00", helpful_count: 23 },
+  { comment_id: "10029", user_name: "小清新", rating: 4, comment_text: "颜值高，薄荷绿的配色很特别，朋友来都问在哪买的。", comment_time: "2024-12-10 10:10:00", helpful_count: 11 },
+  { comment_id: "10030", user_name: "较真的老刘", rating: 2, comment_text: "宣传说有紫外线除螨功能，但我用除螨仪检测了一下，效果微乎其微，感觉就是噱头。", comment_time: "2024-12-10 13:30:00", helpful_count: 33 },
+  { comment_id: "10031", user_name: "新手妈妈", rating: 5, comment_text: "运行噪音比想象中小很多，宝宝午睡的时候也能用，不会吵醒她。", comment_time: "2024-12-11 08:00:00", helpful_count: 19 },
+  { comment_id: "10032", user_name: "上班族Amy", rating: 5, comment_text: "下班回来十分钟就能把全屋吸一遍，省时省力，打工人的福音。", comment_time: "2024-12-11 19:30:00", helpful_count: 14 },
+  { comment_id: "10033", user_name: "退休教师王老师", rating: 4, comment_text: "操作简单，说明书也写得清楚，我这个不太会用电器的人也能轻松上手。", comment_time: "2024-12-12 09:25:00", helpful_count: 10 },
+  { comment_id: "10034", user_name: "差评专业户", rating: 1, comment_text: "第二次购买了，第一台用了半年就坏了，想着可能是个例又买了一台，结果这台三个月又出问题了，质控太差！", comment_time: "2024-12-12 11:50:00", helpful_count: 62 },
+  { comment_id: "10035", user_name: "热爱生活的我", rating: 5, comment_text: "圣诞节送给自己的礼物，开箱体验很棒，用起来也舒服，开心！", comment_time: "2024-12-12 15:00:00", helpful_count: 8 },
+  { comment_id: "10036", user_name: "杭州小吴", rating: 4, comment_text: "地板砖、木地板都吸得很干净，切换刷头也方便，总体满意。", comment_time: "2024-12-13 08:40:00", helpful_count: 12 },
+  { comment_id: "10037", user_name: "真实评价不刷单", rating: 5, comment_text: "第一次用这个牌子，被惊艳到了，吸力比我之前的戴X要强不少。", comment_time: "2024-12-13 10:55:00", helpful_count: 26 },
+  { comment_id: "10038", user_name: "容易上当的小白", rating: 2, comment_text: "感觉和直播间演示的效果差很多，演示吸大颗粒轻松，实际用起来经常卡住。", comment_time: "2024-12-13 14:30:00", helpful_count: 30 },
+  { comment_id: "10039", user_name: "节俭持家的周太", rating: 5, comment_text: "趁活动入手的，到手价比平时便宜两百多，非常划算。", comment_time: "2024-12-14 07:45:00", helpful_count: 15 },
+  { comment_id: "10040", user_name: "搬新家的老孙", rating: 5, comment_text: "新房装修完灰尘多，这个吸尘器清理装修灰尘效果很好，省了不少力。", comment_time: "2024-12-14 11:15:00", helpful_count: 13 },
+  { comment_id: "10041", user_name: "对比控小陈", rating: 3, comment_text: "和同价位几款对比了下，各有优劣吧，不算特别突出但也没大毛病。", comment_time: "2024-12-14 14:00:00", helpful_count: 9 },
+  { comment_id: "10042", user_name: "过敏体质者", rating: 5, comment_text: "HEPA滤网过滤效果真的好，用完之后打喷嚏的次数明显少了，推荐给过敏的朋友。", comment_time: "2024-12-15 08:30:00", helpful_count: 24 },
+  { comment_id: "10043", user_name: "暴怒退货中", rating: 1, comment_text: "简直是垃圾！吸头关节处设计有缺陷，一转弯就脱落，用了三次已经摔了两次了。客服还让我自费寄回！", comment_time: "2024-12-15 11:20:00", helpful_count: 58 },
+  { comment_id: "10044", user_name: "装修达人", rating: 4, comment_text: "壁挂式收纳设计不错，安装也简单，不占地面空间。", comment_time: "2024-12-15 15:45:00", helpful_count: 11 },
+  { comment_id: "10045", user_name: "厨房清洁工", rating: 5, comment_text: "厨房地面的油渍配合湿拖功能，效果出人意料的好，不用弯腰擦地了。", comment_time: "2024-12-16 09:00:00", helpful_count: 17 },
+  { comment_id: "10046", user_name: "程序员阿明", rating: 5, comment_text: "买来吸键盘和电脑桌，迷你吸头特别好用，桌面终于干净了。", comment_time: "2024-12-16 20:30:00", helpful_count: 13 },
+  { comment_id: "10047", user_name: "等了好久的买家", rating: 2, comment_text: "物流体验极差，快递员直接扔在门口，也不打电话通知，箱子都淋湿了，万一机器进水怎么办？", comment_time: "2024-12-17 08:15:00", helpful_count: 29 },
+  { comment_id: "10048", user_name: "颜值即正义", rating: 5, comment_text: "外观设计太好看了，放在家里就像艺术品，而且确实好用。", comment_time: "2024-12-17 10:40:00", helpful_count: 7 },
+  { comment_id: "10049", user_name: "地毯爱好者", rating: 4, comment_text: "长毛地毯清洁效果还不错，但短毛地毯上偶尔会卡住，需要调整一下角度。", comment_time: "2024-12-17 14:55:00", helpful_count: 10 },
+  { comment_id: "10050", user_name: "爱车人士", rating: 5, comment_text: "车载清洁效果好得出奇，座椅缝隙的灰尘碎屑都吸得干干净净。", comment_time: "2024-12-18 07:30:00", helpful_count: 20 },
+  { comment_id: "10051", user_name: "后悔买了", rating: 1, comment_text: "用了两个月电池明显衰减，从40分钟降到20分钟，咨询换电池居然要三百多，比买新的还贵！", comment_time: "2024-12-18 12:00:00", helpful_count: 47 },
+  { comment_id: "10052", user_name: "佛系买家", rating: 4, comment_text: "还行吧，基本满足日常需求，没什么特别惊喜也没什么大问题。", comment_time: "2024-12-18 15:30:00", helpful_count: 5 },
+  { comment_id: "10053", user_name: "双十二剁手族", rating: 5, comment_text: "双十二入手太明智了，用了半个月非常满意，早买早享受。", comment_time: "2024-12-19 08:45:00", helpful_count: 12 },
+  { comment_id: "10054", user_name: "理性消费的我", rating: 3, comment_text: "功能中规中矩，这个价位能买到这样的产品还算合理，但也谈不上惊喜。", comment_time: "2024-12-19 11:20:00", helpful_count: 8 },
+  { comment_id: "10055", user_name: "洁净家园", rating: 5, comment_text: "全屋清洁解决方案！从地面到天花板，配件一套搞定，非常实用。", comment_time: "2024-12-19 15:10:00", helpful_count: 16 },
+  { comment_id: "10056", user_name: "被坑的消费者", rating: 2, comment_text: "买之前问客服有没有赠品，客服说有。收到后发现什么赠品都没有，再问客服就不理人了。虚假宣传！", comment_time: "2024-12-20 09:30:00", helpful_count: 34 },
+  { comment_id: "10057", user_name: "科技测评小王", rating: 5, comment_text: "作为数码博主客观评价，这个价位的吸力和做工都属于上乘水平，推荐。", comment_time: "2024-12-20 13:00:00", helpful_count: 30 },
+  { comment_id: "10058", user_name: "细节控", rating: 4, comment_text: "按钮手感不错，LED灯照亮床底暗处很实用，细节处理到位。", comment_time: "2024-12-21 08:00:00", helpful_count: 11 },
+  { comment_id: "10059", user_name: "三口之家", rating: 5, comment_text: "一家三口都觉得好用，孩子还抢着要帮忙吸地，变成了家务小游戏。", comment_time: "2024-12-21 10:50:00", helpful_count: 18 },
+  { comment_id: "10060", user_name: "受不了了", rating: 1, comment_text: "噪音大得像飞机起飞，楼下邻居都来敲门投诉了。这哪是吸尘器，分明是噪音制造器！", comment_time: "2024-12-21 16:30:00", helpful_count: 40 },
+  { comment_id: "10061", user_name: "满意的一次购物", rating: 5, comment_text: "从下单到收货再到使用，整个体验都很好，包装仔细，机器品质高。", comment_time: "2024-12-22 07:20:00", helpful_count: 9 },
+  { comment_id: "10062", user_name: "测试了好久", rating: 4, comment_text: "测试了各种地面，瓷砖、木地板、地毯都OK，只有石材地面效果一般。", comment_time: "2024-12-22 11:35:00", helpful_count: 14 },
+  { comment_id: "10063", user_name: "心累的买家", rating: 2, comment_text: "发错颜色了，我明明选的白色发了个灰色，申请换货等了两周还没处理，客服永远在排队中。", comment_time: "2024-12-22 15:00:00", helpful_count: 27 },
+  { comment_id: "10064", user_name: "省心省力", rating: 5, comment_text: "自从买了这个，再也不用弯腰扫地了，腰不好的人强烈推荐。", comment_time: "2024-12-23 08:50:00", helpful_count: 15 },
+  { comment_id: "10065", user_name: "环保达人", rating: 4, comment_text: "可水洗滤网设计很环保，不用频繁更换耗材，长期使用成本低。", comment_time: "2024-12-23 10:15:00", helpful_count: 12 },
+  { comment_id: "10066", user_name: "办公室采购", rating: 5, comment_text: "公司采购了三台，办公区清洁效率提升很多，同事们都说好用。", comment_time: "2024-12-24 09:00:00", helpful_count: 6 },
+  { comment_id: "10067", user_name: "年底大扫除", rating: 5, comment_text: "专门为年底大扫除入手的，果然没让我失望，犄角旮旯都能吸到。", comment_time: "2024-12-24 14:20:00", helpful_count: 21 },
+  { comment_id: "10068", user_name: "吐槽达人小美", rating: 2, comment_text: "尘杯卡扣设计不合理，倒垃圾的时候灰尘飞得到处都是，二次污染严重。这设计谁想的？", comment_time: "2024-12-25 08:30:00", helpful_count: 35 },
+  { comment_id: "10069", user_name: "认真评价", rating: 5, comment_text: "认认真真用了一个月才来评价，确实是一款不错的产品，值得购买。", comment_time: "2024-12-25 11:00:00", helpful_count: 23 },
+  { comment_id: "10070", user_name: "换了就回不去", rating: 5, comment_text: "之前用的有线吸尘器，换成无线的之后完全回不去了，太自由了。", comment_time: "2024-12-26 09:40:00", helpful_count: 14 },
+  { comment_id: "10071", user_name: "要求不高", rating: 3, comment_text: "能用，但没有宣传的那么神奇。普通家庭日常清洁足够了。", comment_time: "2024-12-27 10:30:00", helpful_count: 7 },
+  { comment_id: "10072", user_name: "失望至极", rating: 1, comment_text: "买了不到两周就出现吸力忽大忽小的问题，售后让我重置三次都没用，最后说要返厂维修至少等15个工作日。这种品质对得起这个价格吗？", comment_time: "2024-12-28 08:00:00", helpful_count: 50 },
+  { comment_id: "10073", user_name: "安利给全家", rating: 5, comment_text: "太好用了，已经推荐给了爸妈和公婆，他们也都买了，全家好评！", comment_time: "2024-12-29 09:15:00", helpful_count: 19 },
+  { comment_id: "10074", user_name: "跨年清洁", rating: 4, comment_text: "跨年前把家里彻底清洁了一遍，这个吸尘器功不可没，辛苦它了。", comment_time: "2024-12-30 14:00:00", helpful_count: 10 },
+  { comment_id: "10075", user_name: "年终总结", rating: 5, comment_text: "今年买的最满意的家电，没有之一！期待戴林出更多好产品。", comment_time: "2024-12-31 18:00:00", helpful_count: 27 },
+];
+
+const product2RawComments: RawComment[] = [
+  { comment_id: "20001", user_name: "智能家居入门", rating: 5, comment_text: "语音识别很准确，叫一声就能开灯关灯，科技改变生活！", comment_time: "2024-12-01 09:00:00", helpful_count: 35 },
+  { comment_id: "20002", user_name: "尝鲜的老赵", rating: 4, comment_text: "整体体验不错，语音对话很自然，就是偶尔会误唤醒。", comment_time: "2024-12-01 11:30:00", helpful_count: 22 },
+  { comment_id: "20003", user_name: "全屋智能控", rating: 5, comment_text: "已经连接了全屋的灯、窗帘和空调，语音控制太方便了，再也不用到处找遥控器。", comment_time: "2024-12-01 14:45:00", helpful_count: 28 },
+  { comment_id: "20004", user_name: "音乐发烧友小杨", rating: 2, comment_text: "音质太差了，听音乐糊成一片，低音几乎没有，和宣传的Hi-Fi音质完全不符。", comment_time: "2024-12-02 08:20:00", helpful_count: 42 },
+  { comment_id: "20005", user_name: "带娃神器", rating: 5, comment_text: "孩子超喜欢跟它聊天，讲故事、放儿歌、问百科全书都行，解放了老母亲的双手。", comment_time: "2024-12-02 10:50:00", helpful_count: 31 },
+  { comment_id: "20006", user_name: "独居青年小周", rating: 5, comment_text: "一个人住有它陪聊感觉不那么孤单了哈哈，AI对话能力超出预期。", comment_time: "2024-12-02 15:15:00", helpful_count: 19 },
+  { comment_id: "20007", user_name: "网络差的用户", rating: 1, comment_text: "WiFi连接极其不稳定，三天两头掉线，重新配网步骤还特别复杂。家里其他设备都没问题，就它不行！", comment_time: "2024-12-03 08:00:00", helpful_count: 48 },
+  { comment_id: "20008", user_name: "科技潮妈", rating: 5, comment_text: "定了早上七点的闹钟，还能报天气和提醒日程，比手机闹钟人性化多了。", comment_time: "2024-12-03 10:30:00", helpful_count: 15 },
+  { comment_id: "20009", user_name: "爷爷奶奶也能用", rating: 4, comment_text: "买给爷爷奶奶的，方言识别还挺准的，老人家不用学什么操作，说话就行。", comment_time: "2024-12-03 14:00:00", helpful_count: 24 },
+  { comment_id: "20010", user_name: "隐私担忧者", rating: 2, comment_text: "总觉得它在偷听我说话，有次我跟朋友聊天提到某个商品，结果手机上就推送了相关广告，细思极恐。", comment_time: "2024-12-04 09:15:00", helpful_count: 53 },
+  { comment_id: "20011", user_name: "家居达人", rating: 5, comment_text: "外观圆润可爱，放在客厅茶几上完美融入装修风格，实用又好看。", comment_time: "2024-12-04 11:40:00", helpful_count: 13 },
+  { comment_id: "20012", user_name: "做饭好帮手", rating: 5, comment_text: "做饭时手上全是面粉，喊一声就能设定时器，再也不怕忘记关火了。", comment_time: "2024-12-04 16:00:00", helpful_count: 20 },
+  { comment_id: "20013", user_name: "失望的技术宅", rating: 1, comment_text: "智能家居控制经常延迟，有时候说了开灯要等五六秒才有反应，甚至完全没反应。所谓的智能中枢，连最基本的响应速度都保证不了。", comment_time: "2024-12-05 07:50:00", helpful_count: 44 },
+  { comment_id: "20014", user_name: "学英语的宝宝", rating: 5, comment_text: "英语对话功能太棒了，孩子每天跟它练口语，发音纠正也很准确。", comment_time: "2024-12-05 10:20:00", helpful_count: 26 },
+  { comment_id: "20015", user_name: "懒人遥控器", rating: 5, comment_text: "躺在沙发上就能控制全屋家电，连空调温度都能语音调节，懒人必备。", comment_time: "2024-12-05 14:30:00", helpful_count: 17 },
+  { comment_id: "20016", user_name: "被气到了", rating: 2, comment_text: "说好的送货上门，结果快递放驿站就不管了，打客服电话永远在排队。差评！", comment_time: "2024-12-06 08:45:00", helpful_count: 31 },
+  { comment_id: "20017", user_name: "每日好心情", rating: 5, comment_text: "每天起床说一句早上好，它会回复不同的问候语和笑话，一天的好心情从这开始。", comment_time: "2024-12-06 11:10:00", helpful_count: 12 },
+  { comment_id: "20018", user_name: "对比党小赵", rating: 3, comment_text: "和天猫精灵、小爱同学对比了下，各有千秋吧，地猫精灵在对话理解上稍好一些。", comment_time: "2024-12-06 15:30:00", helpful_count: 18 },
+  { comment_id: "20019", user_name: "退货进行中", rating: 1, comment_text: "开机就卡在Logo界面进不去系统，重启了无数次都没用。联系售后说是系统故障需要返厂，等了三周都没消息！这什么售后效率？", comment_time: "2024-12-07 09:00:00", helpful_count: 56 },
+  { comment_id: "20020", user_name: "家有小学生", rating: 5, comment_text: "儿子做作业不会的题问它，解答得清清楚楚，还能举一反三，比我教得好。", comment_time: "2024-12-07 13:20:00", helpful_count: 29 },
+  { comment_id: "20021", user_name: "语音控大叔", rating: 4, comment_text: "在家基本不用动手了，开灯、关窗帘、调空调全靠嘴，就是有时候要喊两遍才听到。", comment_time: "2024-12-07 16:40:00", helpful_count: 14 },
+  { comment_id: "20022", user_name: "性价比战士", rating: 5, comment_text: "这个价格能有这么多功能，真的太值了，比某些大牌便宜一半效果差不多。", comment_time: "2024-12-08 08:10:00", helpful_count: 23 },
+  { comment_id: "20023", user_name: "觉得贵了", rating: 2, comment_text: "功能和两百块的智能音箱差不多，卖五百多就因为多了个屏幕？性价比太低了。", comment_time: "2024-12-08 10:45:00", helpful_count: 37 },
+  { comment_id: "20024", user_name: "追剧达人", rating: 4, comment_text: "用它的屏幕看菜谱很方便，就是屏幕有点小，追剧的话还是算了。", comment_time: "2024-12-08 14:20:00", helpful_count: 9 },
+  { comment_id: "20025", user_name: "惊喜满满", rating: 5, comment_text: "没想到还能视频通话，跟外地的爸妈视频太方便了，他们只需要喊一声就能接通。", comment_time: "2024-12-09 07:30:00", helpful_count: 32 },
+  { comment_id: "20026", user_name: "重度用户反馈", rating: 2, comment_text: "用了一个月，系统越来越卡，反应速度从1秒变成5秒，重启也没用。系统优化做得太差了。", comment_time: "2024-12-09 10:00:00", helpful_count: 39 },
+  { comment_id: "20027", user_name: "甜蜜小两口", rating: 5, comment_text: "和老公一起用来控制家里的智能设备，它能区分我俩的声音做不同的事，太智能了。", comment_time: "2024-12-09 13:50:00", helpful_count: 16 },
+  { comment_id: "20028", user_name: "新奇数码控", rating: 4, comment_text: "AI对话的质量确实不错，问什么都能答上来，就是有时候回答太啰嗦了。", comment_time: "2024-12-10 08:30:00", helpful_count: 11 },
+  { comment_id: "20029", user_name: "生气的买家", rating: 1, comment_text: "第一台屏幕就有坏点，换了一台又发现麦克风有问题。两次收到的都是次品，质检形同虚设？这品控我真的无话可说。", comment_time: "2024-12-10 11:55:00", helpful_count: 51 },
+  { comment_id: "20030", user_name: "煲汤达人", rating: 5, comment_text: "设个定时提醒太好用了，炖汤再也不会忘记了。语音交互比按手机方便多了。", comment_time: "2024-12-10 15:10:00", helpful_count: 14 },
+  { comment_id: "20031", user_name: "数码小白", rating: 5, comment_text: "配网过程比想象中简单很多，扫码就搞定了，对不懂技术的人非常友好。", comment_time: "2024-12-11 08:00:00", helpful_count: 18 },
+  { comment_id: "20032", user_name: "起床困难户", rating: 4, comment_text: "用它当闹钟，到点播放新闻和天气，比普通闹钟实用多了。", comment_time: "2024-12-11 10:30:00", helpful_count: 10 },
+  { comment_id: "20033", user_name: "槽点太多", rating: 2, comment_text: "自带的内容太少了，很多功能要另外付费订阅。买之前不说清楚，买了以后处处要钱，吃相难看。", comment_time: "2024-12-11 15:00:00", helpful_count: 43 },
+  { comment_id: "20034", user_name: "宝妈社群推荐", rating: 5, comment_text: "群里妈妈们推荐的，买来给女儿听故事用，内容丰富，语气也很生动，宝宝听得入迷。", comment_time: "2024-12-12 07:45:00", helpful_count: 25 },
+  { comment_id: "20035", user_name: "安静的夜猫子", rating: 5, comment_text: "夜间模式声音调到最低刚刚好，睡前听白噪音助眠效果一流。", comment_time: "2024-12-12 22:30:00", helpful_count: 13 },
+  { comment_id: "20036", user_name: "无奈的老用户", rating: 1, comment_text: "更新系统后频繁死机，之前好好的现在天天重启。官方论坛投诉了也没人管，老用户就是这种待遇？", comment_time: "2024-12-13 08:15:00", helpful_count: 46 },
+  { comment_id: "20037", user_name: "礼物首选", rating: 5, comment_text: "送给闺蜜的圣诞礼物，她超喜欢！包装也很精美，送礼很有面子。", comment_time: "2024-12-13 11:00:00", helpful_count: 15 },
+  { comment_id: "20038", user_name: "居家办公族", rating: 4, comment_text: "在家办公时用它设提醒、查日历、听新闻，工作效率提升不少。", comment_time: "2024-12-13 14:30:00", helpful_count: 12 },
+  { comment_id: "20039", user_name: "精致生活", rating: 5, comment_text: "早上起床自动播报天气和日程，晚上到时间提醒喝水和运动，像个贴心小管家。", comment_time: "2024-12-14 08:00:00", helpful_count: 20 },
+  { comment_id: "20040", user_name: "心凉了", rating: 2, comment_text: "才买两个月就降价一百多，问客服能不能补差价，说不行。老客户的权益就这样被忽视？", comment_time: "2024-12-14 11:25:00", helpful_count: 33 },
+  { comment_id: "20041", user_name: "全家总动员", rating: 5, comment_text: "家里人都在用，爸妈听戏曲，我听播客，孩子听故事，一台机器满足全家需求。", comment_time: "2024-12-14 15:50:00", helpful_count: 22 },
+  { comment_id: "20042", user_name: "百科全书控", rating: 5, comment_text: "随口问什么都能答，从菜谱到历史知识再到数学题，简直是移动的百科全书。", comment_time: "2024-12-15 09:10:00", helpful_count: 17 },
+  { comment_id: "20043", user_name: "音质要求高", rating: 3, comment_text: "作为智能音箱音质只能说及格，日常听个新闻、播客够了，听音乐就别指望了。", comment_time: "2024-12-15 12:00:00", helpful_count: 14 },
+  { comment_id: "20044", user_name: "怒打一星", rating: 1, comment_text: "垃圾！半夜两点突然自己开始说话，把我吓醒了！这是什么BUG？反馈了一个月也没修复。连基本的用户体验都保证不了！", comment_time: "2024-12-15 15:30:00", helpful_count: 60 },
+  { comment_id: "20045", user_name: "温馨之家", rating: 5, comment_text: "设置了回家模式，一进门自动开灯、开空调，冬天再也不用摸黑找开关了。", comment_time: "2024-12-16 07:40:00", helpful_count: 25 },
+  { comment_id: "20046", user_name: "实际体验分享", rating: 4, comment_text: "用了三周整体满意，语音识别在安静环境下很准，但家里比较吵的时候就差一些。", comment_time: "2024-12-16 10:20:00", helpful_count: 11 },
+  { comment_id: "20047", user_name: "家电测评达人", rating: 5, comment_text: "测评了市面上五款主流智能音箱，地猫精灵的AI对话能力确实是最好的一档。", comment_time: "2024-12-17 08:30:00", helpful_count: 34 },
+  { comment_id: "20048", user_name: "后悔没早买", rating: 5, comment_text: "早知道这么好用就早买了，现在每天离不开它，出差都想带着。", comment_time: "2024-12-17 11:50:00", helpful_count: 16 },
+  { comment_id: "20049", user_name: "恼火的用户", rating: 2, comment_text: "连不上家里的老款空调和电视，说是不兼容。买之前宣传支持万款设备，结果我家的一个都不支持。", comment_time: "2024-12-17 15:10:00", helpful_count: 36 },
+  { comment_id: "20050", user_name: "晨跑爱好者", rating: 5, comment_text: "出门前喊一声今天穿什么，它会根据天气给穿衣建议，太贴心了。", comment_time: "2024-12-18 06:30:00", helpful_count: 14 },
+  { comment_id: "20051", user_name: "猫奴日记", rating: 4, comment_text: "我家猫对它很好奇，老是跟它对话哈哈。不过偶尔猫叫也会触发唤醒词，有点搞笑。", comment_time: "2024-12-18 10:00:00", helpful_count: 27 },
+  { comment_id: "20052", user_name: "特别不满意", rating: 1, comment_text: "充电口设计有问题，插头插不紧经常松动断电。而且底部散热孔朝下，放桌上完全被挡住，用久了机身发烫。设计师是不是没实际测试过？", comment_time: "2024-12-18 13:40:00", helpful_count: 49 },
+  { comment_id: "20053", user_name: "健身打卡", rating: 5, comment_text: "用来做运动计时器特别好，还能播放运动音乐，居家健身好伙伴。", comment_time: "2024-12-19 07:00:00", helpful_count: 11 },
+  { comment_id: "20054", user_name: "效率达人", rating: 5, comment_text: "语音创建待办事项、设置提醒的功能太实用了，工作生活安排得井井有条。", comment_time: "2024-12-19 09:45:00", helpful_count: 18 },
+  { comment_id: "20055", user_name: "佛系用户", rating: 3, comment_text: "还行吧，有些功能挺好用，有些鸡肋。总体来说是个及格的产品。", comment_time: "2024-12-19 14:15:00", helpful_count: 7 },
+  { comment_id: "20056", user_name: "坑爹的售后", rating: 2, comment_text: "保修期内出了问题，售后说要提供购买发票原件。谁还留发票原件啊？电子发票不认，订单记录也不认。这不是故意刁难人吗？", comment_time: "2024-12-20 08:30:00", helpful_count: 41 },
+  { comment_id: "20057", user_name: "温暖的冬天", rating: 5, comment_text: "冬天缩在被窝里就能控制全屋家电，这才是智能生活该有的样子。", comment_time: "2024-12-20 11:00:00", helpful_count: 19 },
+  { comment_id: "20058", user_name: "二胎妈妈", rating: 5, comment_text: "两个孩子都喜欢，一个用来学英语一个用来听故事，不争抢了。", comment_time: "2024-12-20 14:30:00", helpful_count: 21 },
+  { comment_id: "20059", user_name: "极客玩家", rating: 4, comment_text: "开放了不少自定义技能接口，可以自己开发小程序接入，可玩性很高。", comment_time: "2024-12-21 08:00:00", helpful_count: 15 },
+  { comment_id: "20060", user_name: "圣诞礼物", rating: 5, comment_text: "圣诞节限定款包装太好看了！送人自用都合适，功能也没话说。", comment_time: "2024-12-21 11:30:00", helpful_count: 13 },
+  { comment_id: "20061", user_name: "崩溃的妈妈", rating: 1, comment_text: "儿童模式形同虚设，孩子随便说句话就能切换到成人内容。什么儿童保护？完全不负责任！已经投诉到消协了。", comment_time: "2024-12-22 09:20:00", helpful_count: 57 },
+  { comment_id: "20062", user_name: "租房也要品质", rating: 5, comment_text: "租房也能打造智能家居，这个价格入门刚刚好，控制灯和窗帘完全够用。", comment_time: "2024-12-22 12:45:00", helpful_count: 16 },
+  { comment_id: "20063", user_name: "耳朵享受", rating: 4, comment_text: "听有声书的体验很好，声音清晰自然，连续播放几个小时也没问题。", comment_time: "2024-12-23 08:10:00", helpful_count: 10 },
+  { comment_id: "20064", user_name: "年底清仓买的", rating: 5, comment_text: "年底活动价入手，比首发价便宜了三百多，功能一点没缩水，超值！", comment_time: "2024-12-23 11:50:00", helpful_count: 22 },
+  { comment_id: "20065", user_name: "操碎了心", rating: 2, comment_text: "给老人买的，结果老人说经常听不懂它说的话，回答也文绉绉的不接地气。说好的老年人友好呢？适老化做得太差了。", comment_time: "2024-12-24 07:30:00", helpful_count: 30 },
+  { comment_id: "20066", user_name: "平安夜快乐", rating: 5, comment_text: "平安夜让它放圣诞歌，还会说圣诞快乐，有种过节的仪式感，很温馨。", comment_time: "2024-12-24 20:00:00", helpful_count: 18 },
+  { comment_id: "20067", user_name: "稳定使用中", rating: 4, comment_text: "用了快一个月了，系统比较稳定，偶尔需要重启一下，但总体来说很靠谱。", comment_time: "2024-12-25 09:30:00", helpful_count: 9 },
+  { comment_id: "20068", user_name: "对话控", rating: 5, comment_text: "AI对话能力真的强，不是那种机械式回答，能理解上下文，聊天体验很流畅。", comment_time: "2024-12-25 12:15:00", helpful_count: 24 },
+  { comment_id: "20069", user_name: "吐血推荐", rating: 5, comment_text: "必须五星！用了一个月，生活质量直接提升一个档次，谁用谁知道。", comment_time: "2024-12-26 08:40:00", helpful_count: 21 },
+  { comment_id: "20070", user_name: "再也不买了", rating: 1, comment_text: "这是我买过最后悔的电子产品。语音经常识别错误，让它关灯它开了电视，让它放音乐它设了闹钟。而且客服态度很差，永远用话术搪塞。", comment_time: "2024-12-26 11:55:00", helpful_count: 54 },
+  { comment_id: "20071", user_name: "生活小确幸", rating: 5, comment_text: "每天问它今天吃什么，推荐的菜谱还挺靠谱的，成了我的私人营养师。", comment_time: "2024-12-27 09:00:00", helpful_count: 14 },
+  { comment_id: "20072", user_name: "理性分析", rating: 3, comment_text: "优点：AI对话好、配网简单、音质尚可。缺点：偶尔卡顿、部分功能需付费。综合三星半。", comment_time: "2024-12-27 13:30:00", helpful_count: 19 },
+  { comment_id: "20073", user_name: "回购用户", rating: 5, comment_text: "第二台了，卧室客厅各一个，全屋联动太爽了，强烈推荐多买几台。", comment_time: "2024-12-28 08:20:00", helpful_count: 17 },
+  { comment_id: "20074", user_name: "元旦倒计时", rating: 4, comment_text: "让它倒计时跨年，还挺有仪式感的。新年快乐！", comment_time: "2024-12-31 23:55:00", helpful_count: 12 },
+  { comment_id: "20075", user_name: "年度好物推荐", rating: 5, comment_text: "入选我的年度十大好物！智能生活从地猫精灵开始，期待明年的新品。", comment_time: "2024-12-31 20:00:00", helpful_count: 28 },
+];
+
+export const mockComments: EcComment[] = [
+  ...buildComments(product1RawComments, "prod-001"),
+  ...buildComments(product2RawComments, "prod-002"),
+];
+
+// ========== Dashboard 统计 ==========
+export function getDashboardStats(): DashboardStats {
+  const total = mockComments.length;
+  const negative = mockComments.filter((c) => c.negative_flag).length;
+  const avgRating = mockComments.reduce((sum, c) => sum + (c.rate ?? 0), 0) / total;
+  const today = mockComments.filter(
+    (c) => c.comment_time.startsWith("2024-12-31")
+  ).length;
+
+  return {
+    total_products: mockProducts.length,
+    total_comments: total,
+    negative_comments: negative,
+    negative_rate: parseFloat(((negative / total) * 100).toFixed(1)),
+    avg_rating: parseFloat(avgRating.toFixed(1)),
+    today_new_comments: today,
+  };
+}
+
+export function getSentimentDistribution(): SentimentDistribution[] {
+  const negative = mockComments.filter((c) => c.negative_flag).length;
+  const positive = mockComments.filter((c) => !c.negative_flag && (c.rate ?? 0) >= 4).length;
+  const neutral = mockComments.length - negative - positive;
+
+  return [
+    { name: "正面评论", value: positive, color: "#10b981" },
+    { name: "中性评论", value: neutral, color: "#6b7280" },
+    { name: "负面评论", value: negative, color: "#ef4444" },
+  ];
+}
+
+export function getTrendData(): TrendDataPoint[] {
+  const dateMap = new Map<string, { total: number; negative: number; positive: number }>();
+
+  for (let d = 1; d <= 31; d++) {
+    const dateStr = `2024-12-${String(d).padStart(2, "0")}`;
+    dateMap.set(dateStr, { total: 0, negative: 0, positive: 0 });
+  }
+
+  mockComments.forEach((c) => {
+    const date = c.comment_time.split(" ")[0];
+    const entry = dateMap.get(date);
+    if (entry) {
+      entry.total++;
+      if (c.negative_flag) entry.negative++;
+      else entry.positive++;
+    }
+  });
+
+  return Array.from(dateMap.entries())
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([date, data]) => ({
+      date: date.slice(5), // MM-DD
+      ...data,
+    }));
+}
+
+export function getCategoryDistribution(): CategoryDistribution[] {
+  const catMap = new Map<string, number>();
+  const negativeComments = mockComments.filter((c) => c.negative_flag);
+
+  negativeComments.forEach((c) => {
+    const cat = categorizeIssue(c.comment_text);
+    if (cat) {
+      catMap.set(cat, (catMap.get(cat) ?? 0) + 1);
+    }
+  });
+
+  return Array.from(catMap.entries())
+    .map(([category, count]) => ({ category, count }))
+    .sort((a, b) => b.count - a.count);
+}
+
+// ========== 报告数据 ==========
+export function getReports(): MonitorReport[] {
+  return mockProducts.map((product) => {
+    const productComments = mockComments.filter(
+      (c) => c.ec_product_id === product.id
+    );
+    const negComments = productComments.filter((c) => c.negative_flag);
+    const negRate = productComments.length > 0
+      ? parseFloat(((negComments.length / productComments.length) * 100).toFixed(1))
+      : 0;
+
+    // 构建关键问题
+    const catMap = new Map<string, string[]>();
+    negComments.forEach((c) => {
+      const cat = categorizeIssue(c.comment_text) ?? "其他";
+      if (!catMap.has(cat)) catMap.set(cat, []);
+      catMap.get(cat)!.push(c.comment_text);
+    });
+
+    const keyIssues: KeyIssue[] = Array.from(catMap.entries())
+      .map(([category, comments]) => ({
+        category,
+        count: comments.length,
+        percentage: parseFloat(
+          ((comments.length / negComments.length) * 100).toFixed(1)
+        ),
+        representative_comments: comments.slice(0, 3),
+      }))
+      .sort((a, b) => b.count - a.count);
+
+    return {
+      id: `report-${product.id}`,
+      product_id: product.id,
+      product_name: product.product_name,
+      report_date: "2024-12-31",
+      total_comments: productComments.length,
+      negative_count: negComments.length,
+      negative_rate: negRate,
+      summary: `${product.product_name}在2024年12月共收到${productComments.length}条评论，其中负面评论${negComments.length}条，负面率${negRate}%。主要问题集中在${keyIssues.slice(0, 3).map((i) => i.category).join("、")}等方面。`,
+      key_issues: keyIssues,
+      recommendations: [
+        "加强产品出厂质检，降低次品率",
+        "优化售后服务流程，提高响应速度",
+        "改善物流包装，确保运输安全",
+        "规范客服话术，提升服务态度",
+        "核实宣传内容，避免夸大其词",
+      ],
+      status: "finished",
+      created_time: "2024-12-31T23:59:59Z",
+    };
+  });
+}
