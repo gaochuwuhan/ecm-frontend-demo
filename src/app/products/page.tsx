@@ -14,6 +14,7 @@ export default function ProductsPage() {
     platform: "京东",
   });
   const [submitting, setSubmitting] = useState(false);
+  const [errorMsg, setErrorMsg] = useState("");
 
   useEffect(() => {
     loadProducts();
@@ -22,7 +23,7 @@ export default function ProductsPage() {
   async function loadProducts() {
     try {
       const data = await fetchProducts();
-      setProducts(data);
+      setProducts(data.items);
     } finally {
       setLoading(false);
     }
@@ -31,11 +32,14 @@ export default function ProductsPage() {
   async function handleCreate() {
     if (!formData.product_url || !formData.product_name) return;
     setSubmitting(true);
+    setErrorMsg("");
     try {
       await createProduct(formData);
       setShowModal(false);
       setFormData({ product_url: "", product_name: "", platform: "京东" });
       await loadProducts();
+    } catch (e: unknown) {
+      setErrorMsg(e instanceof Error ? e.message : "创建失败");
     } finally {
       setSubmitting(false);
     }
@@ -43,8 +47,12 @@ export default function ProductsPage() {
 
   async function handleDelete(id: string) {
     if (!confirm("确定要删除该商品吗？删除后相关评论数据将无法恢复。")) return;
-    await deleteProduct(id);
-    await loadProducts();
+    try {
+      await deleteProduct(id);
+      await loadProducts();
+    } catch (e: unknown) {
+      alert(e instanceof Error ? e.message : "删除失败");
+    }
   }
 
   if (loading) {
@@ -113,13 +121,13 @@ export default function ProductsPage() {
                   </span>
                 </td>
                 <td className="px-6 py-4">
-                  <span className="text-sm text-gray-500 truncate block max-w-xs">
+                  <span className="text-sm text-gray-500 truncate block max-w-xs" title={product.product_url}>
                     {product.product_url}
                   </span>
                 </td>
                 <td className="px-6 py-4">
                   <span className="text-sm text-gray-500">
-                    {product.created_time.split("T")[0]}
+                    {new Date(product.created_time * 1000).toLocaleDateString("zh-CN")}
                   </span>
                 </td>
                 <td className="px-6 py-4 text-right">
@@ -182,6 +190,12 @@ export default function ProductsPage() {
                     setFormData({ ...formData, product_url: e.target.value })
                   }
                 />
+                <p className="text-xs text-gray-400 mt-1">
+                  可使用以下链接测试：
+                  <button type="button" className="text-primary-500 hover:underline ml-1" onClick={() => setFormData({ ...formData, product_url: "https://item.jd.com/10089231456.html", product_name: "戴林牌智能无线吸尘器 V12 Pro", platform: "京东" })}>京东示例</button>
+                  <span className="mx-1">|</span>
+                  <button type="button" className="text-primary-500 hover:underline" onClick={() => setFormData({ ...formData, product_url: "https://detail.tmall.com/item.htm?id=7823456190", product_name: "地猫精灵智能机器人 X1", platform: "天猫" })}>天猫示例</button>
+                </p>
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
@@ -196,12 +210,12 @@ export default function ProductsPage() {
                 >
                   <option value="京东">京东</option>
                   <option value="天猫">天猫</option>
-                  <option value="淘宝">淘宝</option>
-                  <option value="拼多多">拼多多</option>
-                  <option value="抖音">抖音</option>
                 </select>
               </div>
             </div>
+            {errorMsg && (
+              <p className="text-sm text-red-600 bg-red-50 rounded-lg px-3 py-2 mt-4">{errorMsg}</p>
+            )}
             <div className="flex justify-end gap-3 mt-6">
               <button
                 className="btn-secondary"

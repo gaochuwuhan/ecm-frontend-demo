@@ -1,11 +1,10 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
-import { fetchComments, fetchProducts } from "@/services/api";
+import { fetchComments, fetchProducts, crawlComments, deleteAllComments } from "@/services/api";
 import type { EcComment, EcProduct, CommentFilter } from "@/types";
 
-function RatingStars({ rating }: { rating: number | null }) {
-  if (rating === null) return <span className="text-gray-400 text-xs">-</span>;
+function RatingStars({ rating }: { rating: number }) {
   return (
     <div className="flex gap-0.5">
       {[1, 2, 3, 4, 5].map((star) => (
@@ -27,48 +26,109 @@ export default function CommentsPage() {
   const [products, setProducts] = useState<EcProduct[]>([]);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
+  const [errorMsg, setErrorMsg] = useState("");
   const [filter, setFilter] = useState<CommentFilter>({
     page: 1,
-    page_size: 20,
+    limit: 20,
   });
 
-  const loadComments = useCallback(async () => {
-    setLoading(true);
+  const loadComments = useCallback(async (silent = false) => {
+    if (!silent) setLoading(true);
+    setErrorMsg("");
     try {
       const [commentsData, productsData] = await Promise.all([
         fetchComments(filter),
         fetchProducts(),
       ]);
-      setComments(commentsData.data);
+      setComments(commentsData.items);
       setTotal(commentsData.total);
-      setProducts(productsData);
+      setProducts(productsData.items);
+    } catch (e: unknown) {
+      if (!silent) setErrorMsg(e instanceof Error ? e.message : "加载失败");
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
   }, [filter]);
 
   useEffect(() => {
     loadComments();
+    const timer = setInterval(() => loadComments(true), 5000);
+    return () => clearInterval(timer);
   }, [loadComments]);
 
-  function getProductName(productId: string): string {
-    return products.find((p) => p.id === productId)?.product_name ?? "-";
-  }
+  const [clearing, setClearing] = useState(false);
+  const [crawling, setCrawling] = useState(false);
 
-  const totalPages = Math.ceil(total / filter.page_size);
+  const handleCrawl = async () => {
+    setCrawling(true);
+    setErrorMsg("");
+    try {
+      await crawlComments();
+      await loadComments();
+    } catch (e: unknown) {
+      setErrorMsg(e instanceof Error ? e.message : "拉取评论失败");
+    } finally {
+      setCrawling(false);
+    }
+  };
+
+  const handleClearAll = async () => {
+    if (!confirm("确定要清空所有评论吗？此操作不可恢复。")) return;
+    setClearing(true);
+    try {
+      await deleteAllComments();
+      setFilter({ page: 1, limit: 20 });
+    } catch (e: unknown) {
+      setErrorMsg(e instanceof Error ? e.message : "清空评论失败");
+    } finally {
+      setClearing(false);
+    }
+  };
+
+  const totalPages = Math.ceil(total / filter.limit);
 
   return (
     <div className="space-y-6">
-      <div>
-        <h2 className="text-2xl font-bold text-gray-900">评论监测</h2>
-        <p className="text-sm text-gray-500 mt-1">
-          查看和筛选所有商品评论，支持按情感、评分、关键词等多维度过滤
-        </p>
+      <div className="flex items-center justify-between">
+        <div>
+          <h2 className="text-2xl font-bold text-gray-900">评论监测</h2>
+          <p className="text-sm text-gray-500 mt-1">
+            查看和筛选所有商品评论，支持按情感、评分、关键词等多维度过滤
+          </p>
+        </div>
+        <div className="flex gap-3">
+          <button
+            className="btn-primary"
+            onClick={handleCrawl}
+            disabled={crawling}
+          >
+            {crawling ? (
+              <>
+                <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin mr-2" />
+                拉取中...
+              </>
+            ) : (
+              <>
+                <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                </svg>
+                拉取最新评论
+              </>
+            )}
+          </button>
+          <button
+            className="px-4 py-2 text-sm font-medium text-white bg-red-500 hover:bg-red-600 rounded-lg transition-colors disabled:opacity-50"
+            onClick={handleClearAll}
+            disabled={clearing}
+          >
+            {clearing ? "清空中..." : "清空所有评论"}
+          </button>
+        </div>
       </div>
 
       {/* 筛选条件 */}
       <div className="card">
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
           <div>
             <label className="block text-xs font-medium text-gray-500 mb-1">
               商品
@@ -100,49 +160,27 @@ export default function CommentsPage() {
             <select
               className="w-full rounded-lg border-gray-300 shadow-sm focus:border-primary-500 focus:ring-primary-500 text-sm"
               value={
-                filter.negative_flag === true
+                filter.sentiment === "negative"
                   ? "negative"
-                  : filter.negative_flag === false
+                  : filter.sentiment === "positive"
                     ? "positive"
+                      : filter.sentiment === "neutral"
+                    ? "neutral"
                     : ""
               }
               onChange={(e) => {
                 const val = e.target.value;
                 setFilter({
                   ...filter,
-                  negative_flag:
-                    val === "negative" ? true : val === "positive" ? false : undefined,
+                  sentiment: val || undefined,
                   page: 1,
                 });
               }}
             >
               <option value="">全部</option>
+              <option value="positive">正面</option>
+              <option value="neutral">中性</option>
               <option value="negative">负面</option>
-              <option value="positive">正面/中性</option>
-            </select>
-          </div>
-
-          <div>
-            <label className="block text-xs font-medium text-gray-500 mb-1">
-              最低评分
-            </label>
-            <select
-              className="w-full rounded-lg border-gray-300 shadow-sm focus:border-primary-500 focus:ring-primary-500 text-sm"
-              value={filter.min_rating ?? ""}
-              onChange={(e) =>
-                setFilter({
-                  ...filter,
-                  min_rating: e.target.value ? Number(e.target.value) : undefined,
-                  page: 1,
-                })
-              }
-            >
-              <option value="">不限</option>
-              {[1, 2, 3, 4, 5].map((r) => (
-                <option key={r} value={r}>
-                  {r} 星及以上
-                </option>
-              ))}
             </select>
           </div>
 
@@ -154,9 +192,9 @@ export default function CommentsPage() {
               type="text"
               className="w-full rounded-lg border-gray-300 shadow-sm focus:border-primary-500 focus:ring-primary-500 text-sm"
               placeholder="搜索评论内容或用户名"
-              value={filter.keyword ?? ""}
+              value={filter.search ?? ""}
               onChange={(e) =>
-                setFilter({ ...filter, keyword: e.target.value || undefined, page: 1 })
+                setFilter({ ...filter, search: e.target.value || undefined, page: 1 })
               }
             />
           </div>
@@ -165,7 +203,7 @@ export default function CommentsPage() {
             <button
               className="btn-secondary w-full"
               onClick={() =>
-                setFilter({ page: 1, page_size: 20 })
+                setFilter({ page: 1, limit: 20 })
               }
             >
               重置筛选
@@ -173,6 +211,10 @@ export default function CommentsPage() {
           </div>
         </div>
       </div>
+
+      {errorMsg && (
+        <p className="text-sm text-red-600 bg-red-50 rounded-lg px-4 py-3">{errorMsg}</p>
+      )}
 
       {/* 评论统计 */}
       <div className="flex items-center justify-between">
@@ -210,61 +252,75 @@ export default function CommentsPage() {
                   情感得分
                 </th>
                 <th className="text-left text-xs font-medium text-gray-500 uppercase tracking-wider px-6 py-3">
-                  时间
+                  评论时间
+                </th>
+                <th className="text-left text-xs font-medium text-gray-500 uppercase tracking-wider px-6 py-3">
+                  分析时间
                 </th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
               {comments.map((comment) => (
-                <tr key={comment.comment_id} className="hover:bg-gray-50 transition-colors">
+                <tr key={comment.id} className="hover:bg-gray-50 transition-colors">
                   <td className="px-6 py-4 whitespace-nowrap">
                     <span className="text-sm font-medium text-gray-900">
                       {comment.comment_user}
                     </span>
                   </td>
                   <td className="px-6 py-4">
-                    <p className="text-sm text-gray-700 line-clamp-2 max-w-md">
+                    <p className="text-sm text-gray-700 line-clamp-2 max-w-md" title={comment.comment_text}>
                       {comment.comment_text}
                     </p>
                   </td>
                   <td className="px-6 py-4">
-                    <span className="text-xs text-gray-500 truncate block max-w-[140px]">
-                      {getProductName(comment.ec_product_id)}
+                    <span className="text-xs text-gray-500 truncate block max-w-[140px]" title={comment.product_name}>
+                      {comment.product_name}
                     </span>
                   </td>
                   <td className="px-6 py-4 text-center">
                     <RatingStars rating={comment.rate} />
                   </td>
                   <td className="px-6 py-4 text-center">
-                    {comment.negative_flag ? (
+                    {comment.sentiment === "negative" ? (
                       <span className="badge-negative">负面</span>
-                    ) : (
+                    ) : comment.sentiment === "neutral" ? (
+                      <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-700">中性</span>
+                    ) : comment.sentiment === "positive" ? (
                       <span className="badge-positive">正面</span>
+                    ) : (
+                      <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-400">待分析</span>
                     )}
                   </td>
                   <td className="px-6 py-4 text-center">
                     <span
                       className={`text-sm font-medium ${
-                        (comment.sentiment_score ?? 0) < 0
-                          ? "text-red-600"
-                          : (comment.sentiment_score ?? 0) > 0.3
-                            ? "text-green-600"
-                            : "text-gray-600"
+                        comment.sentiment_score == null
+                          ? "text-gray-400"
+                          : comment.sentiment_score < 0
+                            ? "text-red-600"
+                            : comment.sentiment_score > 0.3
+                              ? "text-green-600"
+                              : "text-gray-600"
                       }`}
                     >
-                      {comment.sentiment_score}
+                      {comment.sentiment_score != null ? comment.sentiment_score.toFixed(2) : "-"}
                     </span>
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap">
                     <span className="text-sm text-gray-500">
-                      {comment.comment_time.split(" ")[0]}
+                      {new Date(comment.comment_time * 1000).toLocaleString("zh-CN")}
+                    </span>
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap">
+                    <span className="text-sm text-gray-500">
+                      {new Date(comment.updated_time * 1000).toLocaleString("zh-CN")}
                     </span>
                   </td>
                 </tr>
               ))}
               {comments.length === 0 && (
                 <tr>
-                  <td colSpan={7} className="px-6 py-12 text-center text-gray-500">
+                  <td colSpan={8} className="px-6 py-12 text-center text-gray-500">
                     没有找到匹配的评论
                   </td>
                 </tr>

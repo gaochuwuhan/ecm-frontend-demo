@@ -1,13 +1,12 @@
 "use client";
 
-import type { EcComment } from "@/types";
+import type { RecentNegativeItem } from "@/types";
 
 interface RecentNegativeCommentsProps {
-  comments: EcComment[];
+  comments: RecentNegativeItem[];
 }
 
-function RatingStars({ rating }: { rating: number | null }) {
-  if (rating === null) return <span className="text-gray-400 text-xs">-</span>;
+function RatingStars({ rating }: { rating: number }) {
   return (
     <div className="flex gap-0.5">
       {[1, 2, 3, 4, 5].map((star) => (
@@ -27,10 +26,7 @@ function RatingStars({ rating }: { rating: number | null }) {
 export default function RecentNegativeComments({
   comments,
 }: RecentNegativeCommentsProps) {
-  const negativeComments = comments
-    .filter((c) => c.negative_flag)
-    .sort((a, b) => b.comment_time.localeCompare(a.comment_time))
-    .slice(0, 10);
+  const negativeComments = comments;
 
   return (
     <div className="card">
@@ -43,7 +39,7 @@ export default function RecentNegativeComments({
       <div className="space-y-3 max-h-96 overflow-y-auto">
         {negativeComments.map((comment) => (
           <div
-            key={comment.comment_id}
+            key={comment.id}
             className="p-3 bg-red-50 rounded-lg border border-red-100"
           >
             <div className="flex items-center justify-between mb-1.5">
@@ -51,21 +47,23 @@ export default function RecentNegativeComments({
                 <span className="text-sm font-medium text-gray-900">
                   {comment.comment_user}
                 </span>
-                <RatingStars rating={comment.rate} />
+                {comment.rate != null && <RatingStars rating={comment.rate} />}
               </div>
               <span className="text-xs text-gray-500">
-                {comment.comment_time.split(" ")[0]}
+                {new Date(comment.comment_time * 1000).toLocaleDateString("zh-CN")}
               </span>
             </div>
             <p className="text-sm text-gray-700 leading-relaxed">
               {comment.comment_text}
             </p>
             <div className="flex items-center gap-3 mt-2">
+              {comment.sentiment_score != null && (
               <span className="text-xs text-gray-500">
-                情感得分: {comment.sentiment_score}
+                情感得分: {comment.sentiment_score.toFixed(2)}
               </span>
+              )}
               <span className="text-xs text-gray-500">
-                有用: {comment.helpful_count}
+                {comment.product_name}
               </span>
             </div>
           </div>

@@ -8,7 +8,7 @@ interface StatsCardsProps {
 
 const cards = [
   {
-    key: "total_products" as const,
+    key: "product_count" as const,
     label: "监测商品数",
     icon: (
       <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -32,7 +32,7 @@ const cards = [
     textColor: "text-green-600",
   },
   {
-    key: "negative_comments" as const,
+    key: "negative_count" as const,
     label: "负面评论数",
     icon: (
       <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -68,23 +68,11 @@ const cards = [
     bgColor: "bg-yellow-50",
     textColor: "text-yellow-600",
   },
-  {
-    key: "today_new_comments" as const,
-    label: "最近新增评论",
-    icon: (
-      <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-      </svg>
-    ),
-    color: "bg-purple-500",
-    bgColor: "bg-purple-50",
-    textColor: "text-purple-600",
-  },
 ];
 
 export default function StatsCards({ stats }: StatsCardsProps) {
   return (
-    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4">
+    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4">
       {cards.map((card) => (
         <div key={card.key} className="card flex items-center gap-4">
           <div className={`${card.bgColor} p-3 rounded-lg`}>

@@ -4,8 +4,8 @@ export interface EcProduct {
   product_url: string;
   product_name: string;
   platform: string;
-  created_time: string;
-  updated_time: string;
+  created_time: number;
+  updated_time: number;
 }
 
 export interface CreateProductRequest {
@@ -14,48 +14,58 @@ export interface CreateProductRequest {
   platform: string;
 }
 
+export interface ProductListResponse {
+  items: EcProduct[];
+  total: number;
+  page: number;
+  limit: number;
+}
+
 // ========== 评论相关 ==========
 export interface EcComment {
   id: number;
-  ec_product_id: string;
-  comment_id: string;
-  comment_text: string;
   comment_user: string;
-  rate: number | null;
-  comment_time: string;
-  helpful_count: number;
-  sentiment_score: number | null;
-  negative_flag: boolean | null;
-  created_time: string;
-  updated_time: string;
+  comment_text: string;
+  product_name: string;
+  rate: number;
+  sentiment: string;
+  sentiment_score: number;
+  comment_time: number;
+  updated_time: number;
+}
+
+export interface CommentListResponse {
+  items: EcComment[];
+  total: number;
+  page: number;
+  limit: number;
 }
 
 export interface CommentFilter {
   product_id?: string;
-  negative_flag?: boolean | null;
-  min_rating?: number;
-  max_rating?: number;
-  start_date?: string;
-  end_date?: string;
-  keyword?: string;
+  sentiment?: string | null;
+  search?: string;
   page: number;
-  page_size: number;
+  limit: number;
 }
 
 // ========== 报告相关 ==========
 export interface MonitorReport {
-  id: string;
-  product_id: string;
+  id?: number;
+  ec_product_id: string;
   product_name: string;
-  report_date: string;
+  platform: string;
+  product_url: string;
+  period_days: number;
   total_comments: number;
-  negative_count: number;
+  negative_comments: number;
   negative_rate: number;
   summary: string;
-  key_issues: KeyIssue[];
-  recommendations: string[];
   status: "pending" | "processing" | "finished" | "failed";
-  created_time: string;
+  report_date: string;
+  created_time: number;
+  key_issues?: KeyIssue[];
+  recommendations?: string[];
 }
 
 export interface KeyIssue {
@@ -65,14 +75,20 @@ export interface KeyIssue {
   representative_comments: string[];
 }
 
+export interface ReportListResponse {
+  items: MonitorReport[];
+  total: number;
+  page: number;
+  limit: number;
+}
+
 // ========== Dashboard统计 ==========
 export interface DashboardStats {
-  total_products: number;
+  product_count: number;
   total_comments: number;
-  negative_comments: number;
+  negative_count: number;
   negative_rate: number;
   avg_rating: number;
-  today_new_comments: number;
 }
 
 export interface SentimentDistribution {
@@ -83,14 +99,41 @@ export interface SentimentDistribution {
 
 export interface TrendDataPoint {
   date: string;
-  total: number;
-  negative: number;
   positive: number;
+  negative: number;
+  neutral: number;
 }
 
 export interface CategoryDistribution {
   category: string;
   count: number;
+}
+
+export interface RecentNegativeItem {
+  id: number;
+  comment_user: string;
+  comment_text: string;
+  product_name?: string;
+  rate?: number;
+  sentiment_score?: number;
+  comment_time: number;
+}
+
+export interface DashboardResponse {
+  product_count: number;
+  total_comments: number;
+  negative_count: number;
+  negative_rate: number;
+  avg_rating: number;
+  comment_trend: TrendDataPoint[];
+  sentiment_distribution: { sentiment: string; count: number }[];
+  category_distribution: CategoryDistribution[];
+  recent_negatives: RecentNegativeItem[];
+}
+
+export interface SendReportRequest {
+  report_ids: number[];
+  emails: string[];
 }
 
 // ========== 通用 ==========

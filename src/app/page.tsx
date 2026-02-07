@@ -6,45 +6,68 @@ import SentimentPieChart from "@/components/dashboard/SentimentPieChart";
 import TrendChart from "@/components/dashboard/TrendChart";
 import CategoryChart from "@/components/dashboard/CategoryChart";
 import RecentNegativeComments from "@/components/dashboard/RecentNegativeComments";
-import {
-  fetchDashboardStats,
-  fetchSentimentDistribution,
-  fetchTrendData,
-  fetchCategoryDistribution,
-  fetchComments,
-} from "@/services/api";
+import { fetchDashboard } from "@/services/api";
 import type {
   DashboardStats,
   SentimentDistribution,
   TrendDataPoint,
   CategoryDistribution,
-  EcComment,
+  RecentNegativeItem,
 } from "@/types";
+
+const CATEGORY_LABEL: Record<string, string> = {
+  quality: "质量问题",
+  service: "服务问题",
+  function: "功能问题",
+  price: "价格问题",
+  logistics: "物流问题",
+};
+
+const SENTIMENT_MAP: Record<string, { name: string; color: string }> = {
+  positive: { name: "正面评论", color: "#10b981" },
+  neutral: { name: "中性评论", color: "#6b7280" },
+  negative: { name: "负面评论", color: "#ef4444" },
+};
 
 export default function DashboardPage() {
   const [stats, setStats] = useState<DashboardStats | null>(null);
   const [sentiment, setSentiment] = useState<SentimentDistribution[]>([]);
   const [trend, setTrend] = useState<TrendDataPoint[]>([]);
   const [categories, setCategories] = useState<CategoryDistribution[]>([]);
-  const [comments, setComments] = useState<EcComment[]>([]);
+  const [recentNegatives, setRecentNegatives] = useState<RecentNegativeItem[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     async function loadData() {
       try {
-        const [statsData, sentimentData, trendData, categoryData, commentsData] =
-          await Promise.all([
-            fetchDashboardStats(),
-            fetchSentimentDistribution(),
-            fetchTrendData(),
-            fetchCategoryDistribution(),
-            fetchComments({ page: 1, page_size: 200 }),
-          ]);
-        setStats(statsData);
-        setSentiment(sentimentData);
-        setTrend(trendData);
-        setCategories(categoryData);
-        setComments(commentsData.data);
+        const data = await fetchDashboard();
+
+        setStats({
+          product_count: data.product_count,
+          total_comments: data.total_comments,
+          negative_count: data.negative_count,
+          negative_rate: data.negative_rate,
+          avg_rating: data.avg_rating,
+        });
+
+        setSentiment(
+          data.sentiment_distribution.map((item) => {
+            const mapped = SENTIMENT_MAP[item.sentiment] ?? {
+              name: item.sentiment,
+              color: "#9ca3af",
+            };
+            return { name: mapped.name, value: item.count, color: mapped.color };
+          })
+        );
+
+        setTrend(data.comment_trend);
+        setCategories(
+          data.category_distribution.map((item) => ({
+            ...item,
+            category: CATEGORY_LABEL[item.category] ?? item.category,
+          }))
+        );
+        setRecentNegatives(data.recent_negatives);
       } finally {
         setLoading(false);
       }
@@ -81,7 +104,7 @@ export default function DashboardPage() {
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <CategoryChart data={categories} />
-        <RecentNegativeComments comments={comments} />
+        <RecentNegativeComments comments={recentNegatives} />
       </div>
     </div>
   );

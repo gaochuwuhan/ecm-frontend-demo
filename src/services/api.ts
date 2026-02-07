@@ -1,131 +1,174 @@
 import type {
-  EcProduct,
-  EcComment,
   CommentFilter,
-  MonitorReport,
-  DashboardStats,
-  SentimentDistribution,
-  TrendDataPoint,
-  CategoryDistribution,
-  PaginatedResponse,
+  CommentListResponse,
+  ReportListResponse,
+  DashboardResponse,
   CreateProductRequest,
+  ApiResponse,
+  ProductListResponse,
+  SendReportRequest,
 } from "@/types";
-import {
-  mockProducts,
-  mockComments,
-  getDashboardStats,
-  getSentimentDistribution,
-  getTrendData,
-  getCategoryDistribution,
-  getReports,
-} from "@/lib/mock-data";
 
-// 模拟网络延迟
-const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+import { API_BASE } from "@/config";
 
-// ========== 商品 API ==========
-export async function fetchProducts(): Promise<EcProduct[]> {
-  await delay(300);
-  return mockProducts;
+const REQUEST_TIMEOUT = 100_000; // 100s
+
+function fetchWithTimeout(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
+  return fetch(input, { ...init, signal: AbortSignal.timeout(REQUEST_TIMEOUT) });
 }
 
-export async function createProduct(req: CreateProductRequest): Promise<EcProduct> {
-  await delay(500);
-  const newProduct: EcProduct = {
-    id: `prod-${Date.now()}`,
-    ...req,
-    created_time: new Date().toISOString(),
-    updated_time: new Date().toISOString(),
-  };
-  mockProducts.push(newProduct);
-  return newProduct;
+// ========== 商品 API ==========
+export async function fetchProducts(
+  page: number = 1,
+  limit: number = 100,
+  search?: string,
+  platform?: string,
+): Promise<ProductListResponse> {
+  const params = new URLSearchParams();
+  params.set("page", String(page));
+  params.set("limit", String(limit));
+  if (search) params.set("search", search);
+  if (platform) params.set("platform", platform);
+
+  const res = await fetchWithTimeout(`${API_BASE}/ecm/ec-products?${params.toString()}`);
+  if (!res.ok) {
+    throw new Error(`请求失败: ${res.status}`);
+  }
+  const json: ApiResponse<ProductListResponse> = await res.json();
+  if (json.code !== 0) {
+    throw new Error(json.message || "获取商品列表失败");
+  }
+  return json.data;
+}
+
+export async function createProduct(req: CreateProductRequest): Promise<void> {
+  const res = await fetchWithTimeout(`${API_BASE}/ecm/ec-products`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(req),
+  });
+  if (!res.ok) {
+    throw new Error(`请求失败: ${res.status}`);
+  }
+  const json: ApiResponse<null> = await res.json();
+  if (json.code !== 0) {
+    throw new Error(json.message || "创建商品失败");
+  }
 }
 
 export async function deleteProduct(id: string): Promise<void> {
-  await delay(300);
-  const idx = mockProducts.findIndex((p) => p.id === id);
-  if (idx !== -1) mockProducts.splice(idx, 1);
+  const res = await fetchWithTimeout(`${API_BASE}/ecm/ec-products/${id}`, {
+    method: "DELETE",
+  });
+  if (!res.ok) {
+    throw new Error(`请求失败: ${res.status}`);
+  }
+  const json: ApiResponse<null> = await res.json();
+  if (json.code !== 0) {
+    throw new Error(json.message || "删除商品失败");
+  }
 }
 
 // ========== 评论 API ==========
 export async function fetchComments(
   filter: CommentFilter
-): Promise<PaginatedResponse<EcComment>> {
-  await delay(400);
-  let filtered = [...mockComments];
+): Promise<CommentListResponse> {
+  const params = new URLSearchParams();
+  params.set("page", String(filter.page));
+  params.set("limit", String(filter.limit));
+  if (filter.product_id) params.set("product_id", filter.product_id);
+  if (filter.sentiment !== null && filter.sentiment !== undefined) {
+    params.set("sentiment", String(filter.sentiment));
+  }
+  if (filter.search) params.set("search", filter.search);
 
-  if (filter.product_id) {
-    filtered = filtered.filter((c) => c.ec_product_id === filter.product_id);
+  const res = await fetchWithTimeout(`${API_BASE}/ecm/ec-comments?${params.toString()}`);
+  if (!res.ok) {
+    throw new Error(`请求失败: ${res.status}`);
   }
-  if (filter.negative_flag !== null && filter.negative_flag !== undefined) {
-    filtered = filtered.filter((c) => c.negative_flag === filter.negative_flag);
+  const json: ApiResponse<CommentListResponse> = await res.json();
+  if (json.code !== 0) {
+    throw new Error(json.message || "获取评论列表失败");
   }
-  if (filter.min_rating) {
-    filtered = filtered.filter((c) => (c.rate ?? 0) >= filter.min_rating!);
-  }
-  if (filter.max_rating) {
-    filtered = filtered.filter((c) => (c.rate ?? 5) <= filter.max_rating!);
-  }
-  if (filter.keyword) {
-    const kw = filter.keyword.toLowerCase();
-    filtered = filtered.filter(
-      (c) =>
-        c.comment_text.toLowerCase().includes(kw) ||
-        c.comment_user.toLowerCase().includes(kw)
-    );
-  }
-  if (filter.start_date) {
-    filtered = filtered.filter((c) => c.comment_time >= filter.start_date!);
-  }
-  if (filter.end_date) {
-    filtered = filtered.filter((c) => c.comment_time <= filter.end_date! + " 23:59:59");
-  }
+  return json.data;
+}
 
-  // 按时间倒序
-  filtered.sort((a, b) => b.comment_time.localeCompare(a.comment_time));
+export async function crawlComments(): Promise<void> {
+  const res = await fetchWithTimeout(`${API_BASE}/ecm/ec-comments/crawl`, {
+    method: "POST",
+  });
+  if (!res.ok) {
+    throw new Error(`请求失败: ${res.status}`);
+  }
+  const json: ApiResponse<null> = await res.json();
+  if (json.code !== 0) {
+    throw new Error(json.message || "拉取评论失败");
+  }
+}
 
-  const total = filtered.length;
-  const start = (filter.page - 1) * filter.page_size;
-  const data = filtered.slice(start, start + filter.page_size);
-
-  return {
-    data,
-    total,
-    page: filter.page,
-    page_size: filter.page_size,
-    has_more: start + filter.page_size < total,
-  };
+export async function deleteAllComments(): Promise<void> {
+  const res = await fetchWithTimeout(`${API_BASE}/ecm/ec-comments`, {
+    method: "DELETE",
+  });
+  if (!res.ok) {
+    throw new Error(`请求失败: ${res.status}`);
+  }
+  const json: ApiResponse<null> = await res.json();
+  if (json.code !== 0) {
+    throw new Error(json.message || "清空评论失败");
+  }
 }
 
 // ========== Dashboard API ==========
-export async function fetchDashboardStats(): Promise<DashboardStats> {
-  await delay(300);
-  return getDashboardStats();
-}
-
-export async function fetchSentimentDistribution(): Promise<SentimentDistribution[]> {
-  await delay(200);
-  return getSentimentDistribution();
-}
-
-export async function fetchTrendData(): Promise<TrendDataPoint[]> {
-  await delay(200);
-  return getTrendData();
-}
-
-export async function fetchCategoryDistribution(): Promise<CategoryDistribution[]> {
-  await delay(200);
-  return getCategoryDistribution();
+export async function fetchDashboard(): Promise<DashboardResponse> {
+  const res = await fetchWithTimeout(`${API_BASE}/ecm/dashboard`);
+  if (!res.ok) {
+    throw new Error(`请求失败: ${res.status}`);
+  }
+  const json: ApiResponse<DashboardResponse> = await res.json();
+  if (json.code !== 0) {
+    throw new Error(json.message || "获取仪表盘数据失败");
+  }
+  return json.data!;
 }
 
 // ========== 报告 API ==========
-export async function fetchReports(): Promise<MonitorReport[]> {
-  await delay(500);
-  return getReports();
+export async function generateReport(): Promise<void> {
+  const res = await fetchWithTimeout(`${API_BASE}/ecm/ec-reports/generate`, {
+    method: "POST",
+  });
+  if (!res.ok) {
+    throw new Error(`请求失败: ${res.status}`);
+  }
+  const json: ApiResponse<null> = await res.json();
+  if (json.code !== 0) {
+    throw new Error(json.message || "生成报告失败");
+  }
 }
 
-export async function fetchReportById(id: string): Promise<MonitorReport | null> {
-  await delay(300);
-  const reports = getReports();
-  return reports.find((r) => r.id === id) ?? null;
+export async function fetchLatestReports(): Promise<ReportListResponse> {
+  const res = await fetchWithTimeout(`${API_BASE}/ecm/ec-reports/latest`);
+  if (!res.ok) {
+    throw new Error(`请求失败: ${res.status}`);
+  }
+  const json: ApiResponse<ReportListResponse> = await res.json();
+  if (json.code !== 0) {
+    throw new Error(json.message || "获取报告列表失败");
+  }
+  return json.data;
+}
+
+export async function sendReport(req: SendReportRequest): Promise<void> {
+  const res = await fetchWithTimeout(`${API_BASE}/ecm/ec-reports/send-email`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(req),
+  });
+  if (!res.ok) {
+    throw new Error(`请求失败: ${res.status}`);
+  }
+  const json: ApiResponse<null> = await res.json();
+  if (json.code !== 0) {
+    throw new Error(json.message || "发送报告失败");
+  }
 }
